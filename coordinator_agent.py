@@ -48,28 +48,47 @@ def plan_research(ticker, question, previous_notes=None):
         "and sentiment) and 'financial' (prices, financial statements and "
         "valuation). Respond ONLY as JSON with keys: steps (list of short "
         "steps), routes (list of tool names), reason (short explanation). "
+        "IMPORTANT: routes must contain ONLY the exact strings 'financial' "
+        "and/or 'news'. Do not put actions, descriptions, or subtool names "
+        "in routes. Example for price question: "
+        "{\\\"steps\\\":[\\\"Get prices\\\"],\\\"routes\\\":[\\\"financial\\\"],"
+        "\\\"reason\\\":\\\"Price data needed\\\"}. "
         "Use only listed tools; choose both when appropriate. "
         f"Ticker: {ticker}. Question: {question}. "
         f"Previous process notes: {json.dumps(previous_notes or [])}."
     )
-    plan = _json_response(prompt)
-    routes = plan.get("routes")
-    if not isinstance(routes, list) or not routes:
-        raise ValueError("The plan must select at least one specialist.")
-    # Small LLMs sometimes return tool-level paths (e.g. news/get_recent_news)
-    # rather than the two specialist names. Route to the parent specialist.
-    normalized_routes = []
-    for route in routes:
-        if not isinstance(route, str):
-            raise ValueError(f"Invalid route: {route!r}")
-        specialist = route.strip().lower().split("/", 1)[0]
-        if specialist not in SPECIALISTS:
-            raise ValueError(f"Unknown route: {route}")
-        normalized_routes.append(specialist)
-    if not isinstance(plan.get("steps"), list):
-        raise ValueError("The plan must include a list of steps.")
-    plan["routes"] = list(dict.fromkeys(normalized_routes))
-    return plan
+    # Retry once if a small model invents action names in the routes field.
+    for attempt in range(2):
+        plan = _json_response(prompt)
+        routes = plan.get("routes")
+        steps = plan.get("steps")
+        if isinstance(routes, list) and routes and isinstance(steps, list):
+            normalized = []
+            valid = True
+            for route in routes:
+                if not isinstance(route, str):
+                    valid = False
+                    break
+                specialist = route.strip().lower().split("/", 1)[0]
+                if specialist not in SPECIALISTS:
+                    valid = False
+                    break
+                normalized.append(specialist)
+            if valid:
+                plan["routes"] = list(dict.fromkeys(normalized))
+                return plan
+        if attempt == 0:
+            prompt += (
+                "\\nYour last response was invalid. Return a NEW JSON object. "
+                "The routes array MUST contain only exact names from "
+                "['financial', 'news']. Never use action names such as "
+                "'Get current stock price'. Keep actions in steps instead. "
+                f"Invalid response: {json.dumps(plan)}"
+            )
+    raise ValueError(
+        f"LLM returned invalid routes after retry: {plan.get('routes')}. "
+        "Try running the cell again."
+    )
 
 
 def reflect_on_process(ticker, question, plan, results):
