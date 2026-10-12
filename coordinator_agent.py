@@ -56,11 +56,19 @@ def plan_research(ticker, question, previous_notes=None):
     routes = plan.get("routes")
     if not isinstance(routes, list) or not routes:
         raise ValueError("The plan must select at least one specialist.")
-    if any(route not in SPECIALISTS for route in routes):
-        raise ValueError(f"Unknown route(s): {routes}")
+    # Small LLMs sometimes return tool-level paths (e.g. news/get_recent_news)
+    # rather than the two specialist names. Route to the parent specialist.
+    normalized_routes = []
+    for route in routes:
+        if not isinstance(route, str):
+            raise ValueError(f"Invalid route: {route!r}")
+        specialist = route.strip().lower().split("/", 1)[0]
+        if specialist not in SPECIALISTS:
+            raise ValueError(f"Unknown route: {route}")
+        normalized_routes.append(specialist)
     if not isinstance(plan.get("steps"), list):
         raise ValueError("The plan must include a list of steps.")
-    plan["routes"] = list(dict.fromkeys(routes))
+    plan["routes"] = list(dict.fromkeys(normalized_routes))
     return plan
 
 
