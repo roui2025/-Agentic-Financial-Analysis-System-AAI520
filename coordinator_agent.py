@@ -40,6 +40,31 @@ def _json_response(prompt):
     return result
 
 
+def _required_specialists(question):
+    """Determine necessary evidence for unambiguous question types.
+
+    Return None when the request is ambiguous so the LLM can decide.
+    This acts as a guardrail, not a replacement for LLM planning.
+    """
+    q = question.lower()
+    news_terms = ("news", "headline", "sentiment", "press coverage",
+                  "media coverage", "recent articles")
+    financial_terms = ("stock return", "stock price", "share price",
+                       "historical price", "financial performance",
+                       "financial statement", "earnings", "revenue",
+                       "valuation", "balance sheet", "cash flow",
+                       "price performance", "volatility")
+    needs_news = any(term in q for term in news_terms)
+    needs_financial = any(term in q for term in financial_terms)
+    if needs_news and needs_financial:
+        return ["financial", "news"]
+    if needs_news:
+        return ["news"]
+    if needs_financial:
+        return ["financial"]
+    return None
+
+
 def plan_research(ticker, question, previous_notes=None):
     """Plan research steps and dynamically select specialist agents."""
     prompt = (
@@ -57,6 +82,7 @@ def plan_research(ticker, question, previous_notes=None):
         f"Ticker: {ticker}. Question: {question}. "
         f"Previous process notes: {json.dumps(previous_notes or [])}."
     )
+    required = _required_specialists(question)
     # Retry once if a small model invents action names in the routes field.
     for attempt in range(2):
         plan = _json_response(prompt)
@@ -75,7 +101,8 @@ def plan_research(ticker, question, previous_notes=None):
                     break
                 normalized.append(specialist)
             if valid:
-                plan["routes"] = list(dict.fromkeys(normalized))
+                plan["routes"] = (required if required is not None
+                                  else list(dict.fromkeys(normalized)))
                 return plan
         if attempt == 0:
             prompt += (
