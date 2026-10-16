@@ -3,3 +3,4 @@ __pycache__/
 .ipynb_checkpoints/
 .env
 research_memory.json
+integration_output.json
