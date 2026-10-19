@@ -309,7 +309,7 @@ def analyze_news(ticker):
     ticker = ticker.strip().upper()
 
     # 1. Ingest financial news
-    raw_news = load_news(ticker, count=1)
+    raw_news = load_news(ticker, count=10)
 
     # 2. Preprocess articles
     clean_news = preprocess_news(raw_news)
